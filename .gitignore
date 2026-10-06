@@ -1,0 +1,15 @@
+target/
+uploads/
+.env
+.env.*
+!.env.example
+.idea/
+.vscode/
+*.iml
+.classpath
+.project
+.settings/
+*.log
+application-local.yml
+application-local.yaml
+application-local.properties
