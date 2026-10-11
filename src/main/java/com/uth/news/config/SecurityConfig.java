@@ -35,6 +35,7 @@ public class SecurityConfig {
                                 "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/news/search").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/v1/news/upload-image").authenticated()
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/news/images/{filename}").authenticated()
                         .requestMatchers(HttpMethod.GET, "/uploads/{filename}").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/news", "/api/v1/news/{id}").permitAll()
                         .anyRequest().authenticated())

@@ -5,10 +5,13 @@ import com.uth.news.ImageFixtures;
 import com.uth.news.config.*;
 import com.uth.news.constant.AppConstants;
 import com.uth.news.controller.ImageController;
+import com.uth.news.controller.ImageDeletionController;
 import com.uth.news.entity.User;
 import com.uth.news.exception.GlobalExceptionHandler;
 import com.uth.news.repository.UserRepository;
+import com.uth.news.repository.NewsRepository;
 import com.uth.news.service.ImageService;
+import com.uth.news.service.ImageDeletionService;
 import java.nio.file.*;
 import java.util.Optional;
 import org.junit.jupiter.api.*;
@@ -47,6 +50,7 @@ class ImageIntegrationTest {
     @EnableAutoConfiguration(exclude = {DataSourceAutoConfiguration.class,
             HibernateJpaAutoConfiguration.class, JpaRepositoriesAutoConfiguration.class})
     @Import({SecurityConfig.class, OpenApiConfig.class, ImageController.class, ImageService.class,
+            ImageDeletionController.class, ImageDeletionService.class,
             JwtService.class, CustomUserDetailsService.class, SecurityErrorHandler.class, GlobalExceptionHandler.class})
     static class TestApplication { }
 
@@ -62,8 +66,11 @@ class ImageIntegrationTest {
     @Autowired ObjectMapper mapper;
     @Autowired JwtService jwt;
     @MockitoBean UserRepository users;
+    @MockitoBean NewsRepository news;
     private String token;
     private static final String UPLOAD = "/api/v1/news/upload-image";
+    private static final String DELETE = "/api/v1/news/images/";
+    private static final String IMAGE_NAME = "00000000-0000-0000-0000-000000000001.png";
 
     @BeforeEach
     void setup() {
@@ -146,6 +153,87 @@ class ImageIntegrationTest {
         mvc.perform(get("/uploads/00000000-0000-0000-0000-000000000000.png"))
                 .andExpect(status().isNotFound()).andExpect(jsonPath("$.success").value(false));
         mvc.perform(get("/uploads/%2e%2e%2fsecret.txt")).andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void authenticatedDeleteRemovesUploadedImageAndSubsequentReadReturns404() throws Exception {
+        String body = mvc.perform(multipart(UPLOAD).file(new MockMultipartFile("file", "image.png", "image/png",
+                        ImageFixtures.image("png"))).header("Authorization", token))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        String path = java.net.URI.create(mapper.readTree(body).path("data").path("imageUrl").asText()).getPath();
+        String filename = path.substring("/uploads/".length());
+        mvc.perform(delete(DELETE + filename).header("Authorization", token)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.message").value("Image deleted successfully"))
+                .andExpect(jsonPath("$.data").value(org.hamcrest.Matchers.nullValue()));
+        assertThat(directory.resolve(filename)).doesNotExist();
+        mvc.perform(get(path)).andExpect(status().isNotFound());
+        mvc.perform(delete(DELETE + filename).header("Authorization", token))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.success").value(false));
+    }
+
+    @Test
+    void deleteRequiresValidJwtAndKeepsFileWhenUnauthorized() throws Exception {
+        Path image = Files.write(directory.resolve(IMAGE_NAME), ImageFixtures.image("png"));
+        mvc.perform(delete(DELETE + IMAGE_NAME)).andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false));
+        for (String authorization : new String[]{"Bearer invalid", "Bearer " + jwt.generateToken("deleted")}) {
+            mvc.perform(delete(DELETE + IMAGE_NAME).header("Authorization", authorization))
+                    .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.success").value(false));
+        }
+        String expired = new JwtService("test-only-secret-0123456789-abcdef", 1000,
+                java.time.Clock.fixed(java.time.Instant.now().minusSeconds(120), java.time.ZoneOffset.UTC))
+                .generateToken("writer");
+        mvc.perform(delete(DELETE + IMAGE_NAME).header("Authorization", "Bearer " + expired))
+                .andExpect(status().isUnauthorized());
+        assertThat(image).exists();
+        verifyNoInteractions(news);
+    }
+
+    @Test
+    void referencedImageCannotBeDeletedAndRemainsPubliclyReadable() throws Exception {
+        byte[] bytes = ImageFixtures.image("png");
+        Path image = Files.write(directory.resolve(IMAGE_NAME), bytes);
+        when(news.isImageReferenced("%/uploads/" + IMAGE_NAME, "%/uploads/" + IMAGE_NAME + "?%",
+                "%/uploads/" + IMAGE_NAME + "#%")).thenReturn(true);
+        mvc.perform(delete(DELETE + IMAGE_NAME).header("Authorization", token)).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.message").value("Image is referenced by a news article"));
+        assertThat(image).exists();
+        mvc.perform(get("/uploads/" + IMAGE_NAME)).andExpect(status().isOk()).andExpect(content().bytes(bytes));
+    }
+
+    @Test
+    void deletionRejectsInvalidNamesAndEncodedTraversal() throws Exception {
+        Path sentinel = Files.writeString(directory.resolve("secret.txt"), "keep");
+        for (String name : new String[]{"secret.txt", "image.png", IMAGE_NAME + ":stream", "../secret.txt",
+                "%2e%2e%2fsecret.txt", "%2e%2e%5csecret.txt"}) {
+            mvc.perform(delete(DELETE + name).header("Authorization", token))
+                    .andExpect(status().isBadRequest());
+        }
+        assertThat(Files.readString(sentinel)).isEqualTo("keep");
+        verifyNoInteractions(news);
+    }
+
+    @Test
+    void deletionRejectsSymlinksAndIoErrorsUseStandardEnvelope() throws Exception {
+        Path image = Files.write(directory.toRealPath().resolve(IMAGE_NAME), ImageFixtures.image("png"));
+        try (var filesystem = mockStatic(Files.class, CALLS_REAL_METHODS)) {
+            filesystem.when(() -> Files.isSymbolicLink(image)).thenReturn(true);
+            mvc.perform(delete(DELETE + IMAGE_NAME).header("Authorization", token))
+                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.success").value(false));
+        }
+        try (var filesystem = mockStatic(Files.class, invocation -> {
+            if (invocation.getMethod().getName().equals("delete") && image.equals(invocation.getArgument(0))) {
+                throw new AccessDeniedException("private filesystem details");
+            }
+            return invocation.callRealMethod();
+        })) {
+            mvc.perform(delete(DELETE + IMAGE_NAME).header("Authorization", token))
+                    .andExpect(status().isInternalServerError()).andExpect(jsonPath("$.success").value(false))
+                    .andExpect(jsonPath("$.message").value("Internal server error"));
+        }
+        assertThat(image).exists();
     }
 
     @Test
