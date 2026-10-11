@@ -170,6 +170,34 @@ class NewsIntegrationTest {
     }
 
     @Test
+    void imageUrlIsSavedOnCreateAndReturnedByPublicRead() throws Exception {
+        String url = "http://localhost:8080/uploads/00000000-0000-0000-0000-000000000001.png";
+        String body = BODY.replace("\"imageUrl\":null", "\"imageUrl\":\"" + url + "\"");
+        when(news.saveAndFlush(any())).thenAnswer(call -> {
+            News saved = call.getArgument(0);
+            ReflectionTestUtils.setField(saved, "id", 8L);
+            when(news.findById(8L)).thenReturn(Optional.of(saved));
+            return saved;
+        });
+        mvc.perform(post("/api/v1/news").header("Authorization", token).contentType("application/json").content(body))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.data.imageUrl").value(url));
+        mvc.perform(get("/api/v1/news/8")).andExpect(status().isOk()).andExpect(jsonPath("$.data.imageUrl").value(url));
+    }
+
+    @Test
+    void onlyOwnerCanChangeImageUrlAndPublicResponsesReturnUpdatedUrl() throws Exception {
+        String url = "http://localhost:8080/uploads/00000000-0000-0000-0000-000000000002.webp";
+        String body = BODY.replace("\"imageUrl\":null", "\"imageUrl\":\"" + url + "\"");
+        mvc.perform(put("/api/v1/news/7").header("Authorization", "Bearer " + jwt.generateToken("other"))
+                        .contentType("application/json").content(body)).andExpect(status().isForbidden());
+        assertThat(article.getImageUrl()).isEqualTo("https://example.com/image.png");
+        mvc.perform(put("/api/v1/news/7").header("Authorization", token).contentType("application/json").content(body))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.imageUrl").value(url));
+        mvc.perform(get("/api/v1/news/7")).andExpect(status().isOk()).andExpect(jsonPath("$.data.imageUrl").value(url));
+        mvc.perform(get("/api/v1/news")).andExpect(status().isOk()).andExpect(jsonPath("$.data.items[0].imageUrl").value(url));
+    }
+
+    @Test
     void emptyPageAndMaximumSizeAreSupported() throws Exception {
         when(news.findAll(any(Pageable.class))).thenAnswer(call -> new PageImpl<>(List.of(), call.getArgument(0), 0));
         mvc.perform(get("/api/v1/news").param("size", "100")).andExpect(status().isOk())

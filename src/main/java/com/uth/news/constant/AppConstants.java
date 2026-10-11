@@ -14,6 +14,7 @@ public final class AppConstants {
     public static final Set<String> ALLOWED_IMAGE_MIME_TYPES =
             Set.of("image/jpeg", "image/png", "image/webp");
     public static final long MAX_IMAGE_SIZE_BYTES = 5L * 1024 * 1024;
+    public static final long MAX_IMAGE_PIXELS = 25_000_000L;
 
     private AppConstants() {
     }

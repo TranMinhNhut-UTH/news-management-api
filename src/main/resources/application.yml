@@ -1,5 +1,9 @@
 server:
   port: ${SERVER_PORT:8080}
+  tomcat:
+    # Drain rejected multipart bodies so clients can receive the JSON 413 response.
+    # This does not change the 5 MB file / 6 MB multipart acceptance limits.
+    max-swallow-size: -1
 
 spring:
   application:

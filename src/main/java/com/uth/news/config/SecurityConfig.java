@@ -34,6 +34,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/auth/**", "/v3/api-docs/**",
                                 "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/news/search").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/news/upload-image").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/uploads/{filename}").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/news", "/api/v1/news/{id}").permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(new JwtAuthenticationFilter(jwtService, userDetailsService, errorHandler),

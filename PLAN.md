@@ -70,15 +70,18 @@ Prefix `/api/v1`; public không cần token, private cần `Authorization: Beare
 | Private | POST | `/news` | Thêm tin; trả 201 |
 | Private | PUT | `/news/{id}` | Sửa toàn bộ dữ liệu tin |
 | Private | DELETE | `/news/{id}` | Xóa tin; trả 200 với response thống nhất |
-| Private | POST | `/images` | Upload multipart field `file`; trả 201 và imageUrl |
-| Private | DELETE | `/images/{filename}` | Xóa file ảnh theo filename |
+| Private | POST | `/news/upload-image` | Upload multipart field `file`; trả 201, `data.imageUrl` |
+| Private | DELETE | `/images/{filename}` | Dự kiến; chưa triển khai trong phạm vi upload hiện tại |
 | Public | GET | `/uploads/{filename}` | Phục vụ ảnh đã upload |
 
 - `GET /api/v1/news` và `GET /api/v1/news/{id}` public chỉ đọc tin tức; GET danh sách chỉ nhận `page`, `size`, mặc định mới nhất trước. `GET /api/v1/news/search` và POST/PUT/DELETE private. User chỉ sửa/xóa tin do mình viết. Không thêm vai trò admin.
 - Query `GET /api/v1/news/search` yêu cầu JWT: `keyword` tìm trong title/content, `category` lọc chính xác, `sortBy` (`title` hoặc `createdAt`), `direction` (`asc`/`desc`), `page`, `size`. Mặc định `sortBy=createdAt`, `direction=desc`.
 - POST/PUT News nhận `title`, `content`, `category`, `imageUrl` tùy chọn.
-- Upload chỉ JPEG/PNG/WebP, tối đa 5 MB; kiểm tra định dạng ảnh, tạo filename bằng UUID và phần mở rộng phù hợp, chặn path traversal. Không tạo domain Image hoặc quản lý ownership ảnh.
-- Xóa ảnh trực tiếp trên filesystem, không kiểm tra tham chiếu DB. Tin bị xóa không tự xóa file ảnh.
+- Upload chỉ JPEG/PNG/WebP, tối đa 5 MB (5 × 1024 × 1024 byte); giải mã nội dung bằng ImageIO và plugin TwelveMonkeys WebP, đối chiếu Content-Type. File rỗng trả 400, nội dung sai/giả mạo/hỏng trả 415, vượt dung lượng trả 413. Giới hạn ảnh giải mã 25 triệu pixel, vượt giới hạn trả 400 để kiểm soát bộ nhớ.
+- Tạo filename bằng UUID và phần mở rộng từ định dạng thực tế; bỏ qua tên file client. Lưu trong `UPLOAD_DIR`; GET public chỉ phục vụ tên ảnh UUID hợp lệ, không phục vụ file khác hoặc symlink. URL trả về dùng `APP_BASE_URL`.
+- Multipart giới hạn 5 MB/file và 6 MB/request. Tomcat đọc bỏ phần body bị từ chối để client nhận response JSON 413 thay vì lỗi kết nối.
+- Không tạo domain Image hoặc quản lý ownership ảnh. Upload độc lập; client gán `data.imageUrl` vào POST/PUT News. Quyền sửa/xóa bài viết vẫn kiểm tra tác giả từ JWT. Không thay đổi schema hay dữ liệu News hiện có.
+- Xóa ảnh chưa triển khai theo phạm vi yêu cầu ngày 11/10/2026. Tin bị xóa không tự xóa file ảnh.
 - Lỗi chính: 400 dữ liệu sai, 401 token thiếu/sai/hết hạn, 403 không có quyền, 404 không tồn tại, 409 username trùng, 413 file quá lớn, 415 định dạng ảnh không hỗ trợ. Swagger public trong môi trường bài tập.
 
 ## 5. Environment variables và global constants
@@ -104,7 +107,14 @@ Prefix `/api/v1`; public không cần token, private cần `Authorization: Beare
 | 2. Nền tảng API | Entity/repository, DTO validation, response format, global exception handler | Test validation, response thành công/lỗi; xác nhận không lộ password hash |
 | 3. Auth | Register/Login, BCrypt, JWT, security stateless; tắt CSRF vì dùng Bearer token, không dùng cookie auth | Test đăng ký/trùng username, login đúng/sai, token thiếu/sai/hết hạn; API public truy cập được và private trả 401 khi chưa login |
 | 4. News | CRUD, author từ JWT; GET danh sách/chi tiết public, danh sách có phân trang; GET `/news/search` và POST/PUT/DELETE private | Test CRUD và 404; dùng hai User kiểm tra quyền sửa/xóa tin; test đọc public không cần token, search thiếu JWT trả 401; test keyword, category, sortBy, direction và phân trang |
-| 5. Ảnh | Upload/phục vụ/xóa file, filename UUID | Test JPEG/PNG/WebP hợp lệ, sai loại/quá 5 MB, filename UUID, đường dẫn độc hại, xóa file và file không tồn tại |
+| 5. Ảnh | Upload/phục vụ ảnh và liên kết `imageUrl`; filename UUID. Xóa file còn chưa triển khai | Automated tests cho JPEG/PNG/WebP thật, file rỗng/sai/giả mạo/hỏng/quá 5 MB, JWT, đường dẫn an toàn, URL public, giới hạn multipart trên Tomcat thật và quyền cập nhật ảnh bài viết |
 | 6. Hoàn thiện | Swagger/OpenAPI, README hướng dẫn chạy và API mẫu; tạo repository GitHub, commit/push | `mvn clean verify`; chạy luồng Register → Login → Upload → Create → Read/Search → Update → Delete News → Delete Image bằng Swagger/Postman; clone repo và chạy theo README |
 
 Ưu tiên kiểm thử từng phase bằng Swagger/Postman; bổ sung test Spring Boot cần thiết cho validation, auth/security và nghiệp vụ chính, có thể dùng MockMvc và mock service/repository. Không yêu cầu MySQL integration test riêng. README ghi rõ quyền sửa/xóa tin, tìm kiếm và lưu ảnh để dễ trình bày với giảng viên.
+
+## 7. Tiến độ thực tế — 11/10/2026
+
+- Phase 1–4 đã hoàn thành; mốc Phase 4: 52/52 tests đạt.
+- Phase 5: đã triển khai upload JWT tại `POST /api/v1/news/upload-image`, phục vụ ảnh public, kiểm tra nội dung, lưu local và tests liên kết `imageUrl`. API xóa ảnh chưa triển khai; Phase 6 chưa thực hiện.
+- Kiểm thử dùng thư mục tạm thật, decoder thật, MockMvc và Tomcat cổng ngẫu nhiên; repository News/User được mock. Cần kiểm tra lưu `image_url` và timestamps trên MySQL thật bằng Swagger.
+- `mvn clean verify` ngày 11/10/2026: BUILD SUCCESS, 69/69 tests đạt (52 tests cũ + 17 tests mới), không failures/errors/skipped.
