@@ -1,3 +1,13 @@
+ Nhiệm vụ 17: Mỗi nhóm (2 bạn)
+- Chọn 1 ngôn ngữ bất kỳ làm BE (Backend)
+- Tìm hiểu và xây dưng cấu trúc 1 dự án theo ngôn ngữ tự chọn.
+- Xây dựng biến môi trường, biến toàn cục
+- Xây dựng cấu trúc Request/Response
+- Tạo API đăng ký/đăng nhập
+- Tạo API public (đọc tin tức)
+- Tạo API private (thêm xóa sửa  tìm kiếm sắp xếp tin tức)
+- Tạo API upload/xóa file
+* Nhớ tạo dự án trên Github
 # PLAN — NV17: News Management REST API
 
 Phạm vi: Backend REST API với hai domain `User` và `News`. Không làm frontend, không thêm refresh token, bình luận, phân quyền nhiều vai trò hoặc quản lý danh mục riêng.

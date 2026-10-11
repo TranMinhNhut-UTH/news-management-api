@@ -2,6 +2,7 @@ package com.uth.news.config;
 
 import com.uth.news.security.*;
 import jakarta.servlet.DispatcherType;
+import org.springframework.http.HttpMethod;
 import org.springframework.context.annotation.*;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -32,6 +33,8 @@ public class SecurityConfig {
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                         .requestMatchers("/api/v1/auth/**", "/v3/api-docs/**",
                                 "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/news/search").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/news", "/api/v1/news/{id}").permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(new JwtAuthenticationFilter(jwtService, userDetailsService, errorHandler),
                         UsernamePasswordAuthenticationFilter.class)

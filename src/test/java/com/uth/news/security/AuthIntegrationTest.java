@@ -162,8 +162,8 @@ class AuthIntegrationTest {
     }
 
     @Test
-    void newsAndImagePathsRemainPrivateAndHaveNoProductionImplementation() throws Exception {
-        mvc.perform(get("/api/v1/news")).andExpect(status().isUnauthorized());
+    void newsSearchAndImagePathsRemainPrivate() throws Exception {
+        mvc.perform(get("/api/v1/news/search")).andExpect(status().isUnauthorized());
         mvc.perform(post("/api/v1/images")).andExpect(status().isUnauthorized());
     }
 }
